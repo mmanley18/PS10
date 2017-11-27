@@ -1,6 +1,6 @@
 ---
 title: "STAT/MATH 495: Problem Set 10"
-author: "WRITE YOUR NAME(S) HERE"
+author: "Meredith Manley"
 date: "2017-11-28"
 output:
   html_document:
@@ -56,11 +56,137 @@ predictor_matrix_test <- model.matrix(model_formula, data = test)[, -1]
 
 # Do work and create submission files:
 
+### LASSO
 ```{r}
+# wrapper function
+get_LASSO_coefficients <- function(LASSO_fit){
+  coeff_values <- LASSO_fit %>% 
+    broom::tidy() %>% 
+    as_tibble() %>% 
+    select(-c(step, dev.ratio)) %>% 
+    tidyr::complete(lambda, nesting(term), fill = list(estimate = 0)) %>% 
+    arrange(desc(lambda)) %>% 
+    select(term, estimate, lambda)
+  return(coeff_values)
+}
 
+
+# Define values of tuning/complexity parameter lambda
+lambda_inputs <- 10^seq(-2, 10, length = 100)
+
+# Fit the model using glmnet
+LASSO_fit <- glmnet(x=predictor_matrix_train, y=train$log_price_doc, alpha = 1, lambda = lambda_inputs)
+
+# Get beta-hat coefficients for ALL values of knob/tuning parameter lambda
+LASSO_coefficients <- get_LASSO_coefficients(LASSO_fit)
+
+ggplot(LASSO_coefficients, aes(x=lambda, y=estimate, col=term)) +
+  geom_line() +
+  labs(x="lambda", y="beta-hat coefficient estimate") +
+  theme(legend.position="none")
+
+plot_LASSO_coefficients <- LASSO_coefficients %>% 
+  filter(term != "(Intercept)") %>% 
+  ggplot(aes(x=lambda, y=estimate, col=term)) +
+  geom_line() +
+  scale_x_log10() +
+  labs(x="lambda (log10-scale)", y="beta-hat coefficient estimate",
+       title="LASSO regularized coefficient for each lambda value") +
+  theme(legend.position="none")
+plot_LASSO_coefficients
+
+LASSO_CV <- cv.glmnet(x=predictor_matrix_train, y=train$log_price_doc, alpha=1, lambda=lambda_inputs)
+
+# Optimal lambdas
+lambda_star <- LASSO_CV$lambda.min
+lambda_star_1SE <- LASSO_CV$lambda.1se
+
+plot(LASSO_CV)
+abline(v=log(lambda_star), col="red")
+abline(v=log(lambda_star_1SE), col="blue")
+
+# the red line indicates the number of nonzero beta_hats associated with the lowest MSE, >10
+# the blue line indicates the number of nonzero beta_hats associated with 1SE of the lowest MSE, ~5
+
+plot_LASSO_coefficients <- plot_LASSO_coefficients +
+  geom_vline(xintercept = lambda_star, col="red", alpha=0.4, linetype="dashed") +
+  geom_vline(xintercept = lambda_star_1SE, col="blue", alpha=0.4, linetype="dashed")
+plot_LASSO_coefficients
+
+# predicted values from test
+y_hat <- predict(LASSO_fit, newx=predictor_matrix_test, s=lambda_star_1SE) %>% 
+  as.vector()
+
+# change "dummy" variable in test data to actual log values and convert those values back to Rubles
+test <- test %>%
+  mutate(log_price_doc = y_hat) %>%
+  mutate(price_doc = exp(log_price_doc))
+
+# create submission file
+submission <- test[c(1, 293)]
+write.csv(submission, "submission.csv")
+
+
+# predicted values from the 150 observations training set
+log_price_doc_hat <- predict(LASSO_fit, newx=predictor_matrix_train, s=lambda_star_1SE) %>% 
+  as.vector()
+hist(log_price_doc_hat)
+
+## Check RMSLE from training data for comparison
+# RMSLE for predicted on train
+train %>%
+  mutate(log_price_doc_hat = log_price_doc_hat) %>%
+  summarise(RMSLE = mean((log_price_doc - log_price_doc_hat)^2))
+
+# this value should be lower than what kaggle outputs because we are calculating the score
+# based on the data that the model was trained out
 ```
 
 
+### Linear Model
+```{r}
+train <- read_csv("data/train.csv")
+test <- read_csv("data/test.csv")
+sample_submission <- read_csv("data/sample_submission.csv")
+
+# Only use 150 observations to train model!
+set.seed(76)
+train <- train %>% 
+  mutate(log_price_doc = log(price_doc)) %>% 
+  sample_n(150)
+
+# Need "dummy" outcome variable to make model.matrix() code below work
+test <- test %>% 
+  mutate(log_price_doc=1)
+
+# linear model
+lm_model <- lm(model_formula, data=train)
+
+# produce predictions
+y_hat <- predict.lm(lm_model, newdata=test) 
+
+test <- test %>%
+  mutate(log_price_doc = y_hat) %>%
+  mutate(price_doc = exp(log_price_doc))
+
+
+# Create submission file
+submission <- test[c(1, 293)]
+write.csv(submission, "submission.csv")
+
+# predicted values from the 150 observations training set
+y_hat <- predict.lm(lm_model, newdata=train)
+
+## Check RMSLE from training data for comparison
+# RMSLE for predicted on train
+train %>%
+  mutate(log_price_doc_hat = y_hat) %>%
+  summarise(RMSLE = mean((log_price_doc - log_price_doc_hat)^2))
+
+# this value should be lower than what kaggle outputs because we are calculating the score
+# based on the data that the model was trained out
+
+```
 
 
 
@@ -72,5 +198,5 @@ in these cells:
 
 Method                | Training Score  | Kaggle Score
 --------------------- | -------------   | -------------
-lm                    |                 |  
-LASSO crossvalidated  |                 |  
+lm                    |  0.06424732     |  2.63413
+LASSO crossvalidated  |  0.2933529      |  0.45162
