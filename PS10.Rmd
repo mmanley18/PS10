@@ -135,8 +135,8 @@ hist(log_price_doc_hat)
 ## Check RMSLE from training data for comparison
 # RMSLE for predicted on train
 train %>%
-  mutate(log_price_doc_hat = log_price_doc_hat) %>%
-  summarise(RMSLE = mean((log_price_doc - log_price_doc_hat)^2))
+  mutate(price_doc_hat = exp(log_price_doc_hat)) %>%
+  summarise(RMSLE = mean((log(price_doc+1) - log(price_doc_hat+1))^2))
 
 # this value should be lower than what kaggle outputs because we are calculating the score
 # based on the data that the model was trained out
@@ -180,8 +180,8 @@ y_hat <- predict.lm(lm_model, newdata=train)
 ## Check RMSLE from training data for comparison
 # RMSLE for predicted on train
 train %>%
-  mutate(log_price_doc_hat = y_hat) %>%
-  summarise(RMSLE = mean((log_price_doc - log_price_doc_hat)^2))
+  mutate(price_doc_hat = exp(y_hat)) %>%
+  summarise(RMSLE = mean((log(price_doc+1) - log(price_doc_hat+1))^2))
 
 # this value should be lower than what kaggle outputs because we are calculating the score
 # based on the data that the model was trained out
@@ -198,5 +198,5 @@ in these cells:
 
 Method                | Training Score  | Kaggle Score
 --------------------- | -------------   | -------------
-lm                    |  0.06424732     |  2.63413
-LASSO crossvalidated  |  0.2933529      |  0.45162
+lm                    |  0.06424726     |  2.63413
+LASSO crossvalidated  |  0.2933527      |  0.45162
